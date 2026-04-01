@@ -24,14 +24,6 @@ What works now:
 - dashboard/history view for previous submissions
 - uploaded PDF preview and structured review display in the frontend
 
-What is still starter-grade:
-
-- no production auth or multi-user separation
-- no advanced vector ingestion pipeline
-- no robust deployment/setup automation
-- no comprehensive tests
-- optional integrations like Qdrant, GROBID, Ollama, and Tavily are best-effort, not required
-
 ## Architecture
 
 PapRev has three main parts:
@@ -288,20 +280,3 @@ If using the backend-served built frontend:
 ```text
 http://localhost:6069/
 ```
-
-## Notes
-
-- If the RAG service is not reachable, the backend will fall back to the local Node review pipeline.
-- If the frontend shows stale or confusing data after major config changes, submit a fresh job rather than reusing an old one.
-- The current UI now exposes whether a completed report came from:
-  - `rag-service`
-  - `backend-fallback`
-
-## Current Limitations
-
-- no production auth
-- no role/user separation
-- no production-safe secret management
-- no robust retry/dead-letter job system
-- no complete observability or test coverage
-- optional retrieval providers are not mandatory and may silently degrade to simpler behavior if unavailable
