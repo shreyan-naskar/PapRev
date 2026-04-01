@@ -1,263 +1,307 @@
 # PapRev
 
-PapRev is an intelligent pre-submission paper review system for research manuscripts. The goal is to help authors catch structural gaps, weak methodology descriptions, unclear writing, and missing reviewer-facing components before formal peer review.
+PapRev is a starter pre-submission paper review system for research manuscripts. It lets you upload a PDF or submit manuscript text, runs a review pipeline, and shows structured feedback in a browser UI before formal peer review.
 
-At the current stage, the project includes a functional backend and a lightweight browser-based frontend. The system provides a Gemini-backed review pipeline with Retrieval-Augmented Generation (RAG), heuristic fallback analysis, PDF upload plus manuscript text extraction, and a local UI for interacting with the review endpoints.
+The project currently uses:
 
-## What Has Been Built So Far
+- a React frontend
+- an Express backend with MongoDB persistence
+- a FastAPI RAG service
+- Socket.io for live progress updates
 
-The backend currently supports:
+It is designed to run in simple local starter mode without login/logout.
 
-- manuscript review from raw text or abstract input
-- PDF upload and automatic text extraction
-- manuscript structure analysis
-- heuristic identification of likely weaknesses in the draft
-- retrieval of relevant scholarly context from external literature sources
-- retrieval of curated reporting and submission standards
-- Gemini-based structured review generation when an API key is configured
-- deterministic fallback review generation when Gemini is not configured or unavailable
+## Current State
 
-The frontend currently supports:
+What works now:
 
-- service health and capability inspection
-- manuscript review from pasted text
-- PDF manuscript upload
-- rendering structured review output including readiness score, concerns, actions, questions, and evidence
+- anonymous paper submission, no auth required
+- PDF upload and text-draft submission
+- MongoDB-backed persistence for papers, jobs, and reports
+- live job progress updates over Socket.io
+- a FastAPI RAG pipeline that can use Gemini
+- automatic fallback to the local Node review pipeline if the RAG service fails
+- dashboard/history view for previous submissions
+- uploaded PDF preview and structured review display in the frontend
 
-## Current Backend Architecture
+What is still starter-grade:
 
-The backend is an Express application located in `backend/`.
+- no production auth or multi-user separation
+- no advanced vector ingestion pipeline
+- no robust deployment/setup automation
+- no comprehensive tests
+- optional integrations like Qdrant, GROBID, Ollama, and Tavily are best-effort, not required
 
-Key modules:
+## Architecture
 
-- `backend/src/app.js`
-  Sets up Express, middleware, health checks, and API routing.
+PapRev has three main parts:
 
-- `backend/src/server.js`
-  Starts the HTTP server and handles uncaught exceptions and unhandled promise rejections.
+### Frontend
 
-- `backend/src/controllers/reviewController.js`
-  Handles review requests for both plain text and uploaded PDFs.
+Location: `frontend/`
 
-- `backend/src/routes/reviewRoutes.js`
-  Exposes the review endpoints.
+Responsibilities:
 
-- `backend/src/services/manuscriptAnalysisService.js`
-  Detects section presence, writing quality signals, and methodology-related gaps.
-
-- `backend/src/services/retrievalService.js`
-  Builds the retrieval query, fetches related literature from OpenAlex and Crossref, and selects curated submission standards.
-
-- `backend/src/services/reviewHeuristicsService.js`
-  Produces a rule-based review with readiness score, concerns, and revision suggestions.
-
-- `backend/src/services/llmService.js`
-  Integrates Gemini for structured JSON review generation and embeddings-based ranking.
-
-- `backend/src/services/pdfExtractionService.js`
-  Extracts manuscript text from uploaded PDF files using `pdf-parse`.
-
-- `backend/src/middleware/uploadMiddleware.js`
-  Handles PDF upload validation and in-memory file parsing with `multer`.
-
-- `backend/src/data/submissionStandards.js`
-  Contains curated reporting and publication standards used as part of the RAG context.
-
-## Frontend Architecture
-
-The frontend is a static single-page interface located in `frontend/src/` and served directly by the Express backend.
+- upload PDFs or submit text drafts
+- show live progress for active jobs
+- render structured feedback, findings, recommendations, and sources
+- show dashboard/history of previously processed papers
 
 Key files:
 
-- `frontend/src/index.html`
-  Defines the review workbench, service status panel, and results layout.
+- `frontend/src/app.jsx`
+- `frontend/src/pages/Upload.jsx`
+- `frontend/src/pages/Review.jsx`
+- `frontend/src/pages/Dashboard.jsx`
+- `frontend/src/components/review/FeedbackPanel.jsx`
 
-- `frontend/src/styles.css`
-  Provides the responsive visual design and presentation for the manuscript review interface.
+### Backend
 
-- `frontend/src/app.js`
-  Fetches health/capability data, submits text or PDF review requests, and renders the structured review response.
+Location: `backend/`
+
+Responsibilities:
+
+- accept paper submissions
+- persist papers/jobs/reports in MongoDB
+- dispatch review jobs to the FastAPI RAG service
+- receive progress/completion webhooks
+- fall back to the local Node review pipeline when RAG fails
+- emit live Socket.io progress events to the frontend
+
+Key files:
+
+- `backend/src/app.js`
+- `backend/src/server.js`
+- `backend/src/services/jobWorkflowService.js`
+- `backend/src/services/reviewOrchestratorService.js`
+- `backend/src/services/ragService.js`
+- `backend/src/controllers/webhookController.js`
+
+### RAG Service
+
+Location: `rag-service/`
+
+Responsibilities:
+
+- parse manuscript input
+- chunk text
+- retrieve supporting context
+- run a Gemini-backed review path when configured
+- aggregate a structured report
+- send progress and completion back to the backend
+
+Key files:
+
+- `rag-service/main.py`
+- `rag-service/core/parser.py`
+- `rag-service/core/retriever.py`
+- `rag-service/core/reviewer.py`
+- `rag-service/core/report.py`
 
 ## Review Flow
 
-The current review pipeline works like this:
+The current review flow is:
 
-1. A user submits either raw manuscript text or a PDF.
-2. If a PDF is uploaded, the backend extracts text from it.
-3. The manuscript is analyzed for:
-   - missing core sections
-   - methodology signals
-   - readability issues
-   - reproducibility and ethics cues
-4. A retrieval query is generated from the manuscript title, discipline, venue, and analysis signals.
-5. Relevant context is gathered from:
-   - OpenAlex
-   - Crossref
-   - curated reporting standards
-6. A heuristic review is created.
-7. If `GEMINI_API_KEY` is configured, Gemini generates a richer structured review grounded in the manuscript analysis and retrieval context.
-8. If Gemini is unavailable, the heuristic review is returned instead.
+1. The frontend submits a text draft or uploaded PDF to the backend.
+2. The backend stores a `Paper` and `ReviewJob` in MongoDB.
+3. The backend dispatches the job to the FastAPI RAG service.
+4. The RAG service emits progress updates back to the backend webhook.
+5. The backend forwards progress updates to the frontend through Socket.io.
+6. The RAG service generates a report and posts it back to the backend.
+7. The backend stores the report and marks the job complete.
+8. If the RAG service fails, the backend falls back to the local Node review pipeline and still tries to produce a report.
 
-## Available API Endpoints
+## RAG Behavior
 
-### `GET /api/v1/health`
+The FastAPI RAG service is Gemini-first.
 
-Returns service health and whether Gemini-backed review is configured.
+### Gemini path
 
-### `GET /api/v1/reviews/capabilities`
+If `GEMINI_API_KEY` is set in `rag-service/.env`, the Python reviewer attempts to use Gemini for dimension-level review generation.
 
-Returns the currently supported ingestion modes and review capabilities.
+### Fallback behavior
 
-### `POST /api/v1/reviews`
+If the RAG service is unavailable, or if the RAG pipeline fails, the backend falls back to the local Node review pipeline in:
 
-Accepts manuscript text directly as JSON.
+- `backend/src/services/reviewOrchestratorService.js`
 
-Example request body:
+That local pipeline can still produce heuristic review output and optionally use the backend Gemini path if configured there.
 
-```json
-{
-  "title": "A Retrieval-Augmented System for Pre-Submission Paper Review",
-  "discipline": "machine-learning",
-  "targetVenue": "NeurIPS",
-  "abstract": "Short abstract here",
-  "manuscript": "Full manuscript text here"
-}
-```
+### Optional integrations
 
-### `POST /api/v1/reviews/upload`
+The following are optional and can be left blank for a basic local trial:
 
-Accepts a multipart PDF upload.
+- `TAVILY_API_KEY`
+- `QDRANT_URL`
+- `GROBID_URL`
+- `OLLAMA_URL`
 
-Form fields:
+If they are configured and reachable, the RAG service will attempt to use them. If they are not available, the starter pipeline continues in a simplified mode.
 
-- `paper`: the PDF file
-- `title`: optional, inferred from filename if omitted
-- `discipline`: optional
-- `targetVenue`: optional
-- `abstract`: optional
+## API Endpoints
 
-Example:
+### System
 
-```bash
-curl -X POST http://localhost:6069/api/v1/reviews/upload \
-  -F "paper=@your-paper.pdf" \
-  -F "discipline=machine-learning" \
-  -F "targetVenue=NeurIPS"
-```
+- `GET /api/v1/health`
+- `GET /api/v1/capabilities`
 
-## Review Output Shape
+### Papers
 
-The current review response includes:
+- `GET /api/papers`
+- `GET /api/papers/:paperId`
+- `POST /api/papers/text`
+- `POST /api/papers/upload`
 
-- `inputSummary`
-- `analysis`
-- `retrieval`
-- `review`
+### Jobs
 
-For PDF uploads, the response also includes:
+- `GET /api/jobs/:jobId`
 
-- `upload`
-- `extraction`
+### Reports
 
-The generated review currently contains:
+- `GET /api/reports/:paperId`
 
-- executive summary
-- readiness score
-- verdict
-- section-by-section feedback
-- major concerns
-- improvement actions
-- questions for the author
-- evidence from standards and related literature
+### Webhooks
+
+- `POST /api/internal/progress`
+- `POST /api/webhook/review-complete`
+
+### Legacy review endpoints
+
+These still exist for the older backend-only flow:
+
+- `GET /api/v1/reviews/capabilities`
+- `POST /api/v1/reviews`
+- `POST /api/v1/reviews/upload`
 
 ## Environment Variables
 
-Create `backend/.env` based on `backend/.env.example`.
+### Frontend
 
-Current variables:
+File: `frontend/.env`
+
+```env
+VITE_API_BASE_URL=http://localhost:6069
+VITE_SOCKET_URL=http://localhost:6069
+```
+
+### Backend
+
+File: `backend/.env`
 
 ```env
 PORT=6069
 NODE_ENV=development
 CORS_ORIGIN=*
+PUBLIC_BASE_URL=http://localhost:6069
+
+MONGODB_URI=mongodb://127.0.0.1:27017/paprev
+
+RAG_SERVICE_URL=http://localhost:8000
+INTERNAL_WEBHOOK_SECRET=replace_with_your_shared_secret
+
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+
 HTTP_TIMEOUT_MS=12000
 MAX_RETRIEVED_PAPERS=8
 ```
 
+### RAG Service
+
+File: `rag-service/.env`
+
+```env
+INTERNAL_WEBHOOK_SECRET=replace_with_the_same_shared_secret
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+
+TAVILY_API_KEY=
+
+QDRANT_URL=
+QDRANT_COLLECTION=paprev-knowledge-base
+
+GROBID_URL=
+
+OLLAMA_URL=
+OLLAMA_EMBED_MODEL=nomic-embed-text
+```
+
+## Minimal Local Trial Setup
+
+For the simplest successful run, you need:
+
+- MongoDB running
+- backend running on `http://localhost:6069`
+- FastAPI RAG service running on `http://localhost:8000`
+- frontend running with Vite or served from backend `frontend/dist`
+
+You do not need these for the minimal trial:
+
+- Qdrant
+- GROBID
+- Ollama
+- Tavily
+
+You only need a valid Gemini key in `rag-service/.env` if you want the RAG service itself to use Gemini.
+
 ## How To Run
 
-From the `backend/` directory:
+### 1. Backend
+
+From `backend/`:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Or in production mode:
+### 2. Frontend
+
+From `frontend/`:
 
 ```bash
-npm start
+npm install
+npm run dev
 ```
 
-The backend runs on the port set in `.env` and also serves the frontend from `/`.
+### 3. RAG Service
 
-Once the server is running, open:
+From `rag-service/`:
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+### 4. Open the app
+
+If using Vite frontend:
+
+```text
+http://localhost:5173/
+```
+
+If using the backend-served built frontend:
 
 ```text
 http://localhost:6069/
 ```
 
-You can still call the JSON API directly under `/api/v1/...`.
+## Notes
 
-## Dependencies Added For Current Functionality
+- If the RAG service is not reachable, the backend will fall back to the local Node review pipeline.
+- If the frontend shows stale or confusing data after major config changes, submit a fresh job rather than reusing an old one.
+- The current UI now exposes whether a completed report came from:
+  - `rag-service`
+  - `backend-fallback`
 
-Important runtime dependencies being used right now:
+## Current Limitations
 
-- `express`
-- `multer`
-- `pdf-parse`
-- `helmet`
-- `cors`
-- `morgan`
-- `cookie-parser`
-- `express-async-handler`
-
-The project also contains several packages that are installed but not yet actively used in the current backend implementation.
-
-## What Is Not Done Yet
-
-The project is still in an early backend-first stage. The following are not implemented yet:
-
-- persistent database models and storage
-- user authentication and saved review history
-- vector database or long-term document indexing
-- citation-grounded chunk storage for uploaded manuscripts
-- advanced reviewer personas or venue-specific scoring profiles
-- batch processing for multiple papers
-- tests for routes and services
-- deployment setup
-
-## Verification Done So Far
-
-The backend has been verified locally for:
-
-- application boot/import checks
-- review orchestration in heuristic mode
-- PDF extraction with a generated smoke-test PDF
-
-Live external retrieval and Gemini responses depend on network access and valid API configuration.
-
-## Current Status
-
-PapRev currently has a functional backend foundation for:
-
-- accepting manuscript content
-- extracting text from PDFs
-- analyzing paper completeness and quality signals
-- retrieving supporting context for RAG
-- generating structured pre-submission feedback
-
-The next natural steps are frontend development, persistent storage, and richer review workflows.
+- no production auth
+- no role/user separation
+- no production-safe secret management
+- no robust retry/dead-letter job system
+- no complete observability or test coverage
+- optional retrieval providers are not mandatory and may silently degrade to simpler behavior if unavailable
