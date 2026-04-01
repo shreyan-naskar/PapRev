@@ -2,7 +2,7 @@
 
 PapRev is an intelligent pre-submission paper review system for research manuscripts. The goal is to help authors catch structural gaps, weak methodology descriptions, unclear writing, and missing reviewer-facing components before formal peer review.
 
-At the current stage, the backend has been implemented first. It provides a Gemini-backed review pipeline with Retrieval-Augmented Generation (RAG), heuristic fallback analysis, and PDF upload plus manuscript text extraction.
+At the current stage, the project includes a functional backend and a lightweight browser-based frontend. The system provides a Gemini-backed review pipeline with Retrieval-Augmented Generation (RAG), heuristic fallback analysis, PDF upload plus manuscript text extraction, and a local UI for interacting with the review endpoints.
 
 ## What Has Been Built So Far
 
@@ -16,6 +16,13 @@ The backend currently supports:
 - retrieval of curated reporting and submission standards
 - Gemini-based structured review generation when an API key is configured
 - deterministic fallback review generation when Gemini is not configured or unavailable
+
+The frontend currently supports:
+
+- service health and capability inspection
+- manuscript review from pasted text
+- PDF manuscript upload
+- rendering structured review output including readiness score, concerns, actions, questions, and evidence
 
 ## Current Backend Architecture
 
@@ -55,6 +62,21 @@ Key modules:
 
 - `backend/src/data/submissionStandards.js`
   Contains curated reporting and publication standards used as part of the RAG context.
+
+## Frontend Architecture
+
+The frontend is a static single-page interface located in `frontend/src/` and served directly by the Express backend.
+
+Key files:
+
+- `frontend/src/index.html`
+  Defines the review workbench, service status panel, and results layout.
+
+- `frontend/src/styles.css`
+  Provides the responsive visual design and presentation for the manuscript review interface.
+
+- `frontend/src/app.js`
+  Fetches health/capability data, submits text or PDF review requests, and renders the structured review response.
 
 ## Review Flow
 
@@ -180,7 +202,15 @@ Or in production mode:
 npm start
 ```
 
-The backend runs on the port set in `.env`.
+The backend runs on the port set in `.env` and also serves the frontend from `/`.
+
+Once the server is running, open:
+
+```text
+http://localhost:6069/
+```
+
+You can still call the JSON API directly under `/api/v1/...`.
 
 ## Dependencies Added For Current Functionality
 
@@ -201,7 +231,6 @@ The project also contains several packages that are installed but not yet active
 
 The project is still in an early backend-first stage. The following are not implemented yet:
 
-- frontend application
 - persistent database models and storage
 - user authentication and saved review history
 - vector database or long-term document indexing
