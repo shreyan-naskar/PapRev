@@ -100,6 +100,7 @@ def _emit_failure(payload: ReviewRequest, message: str) -> None:
 
 
 def _run_pipeline(payload: ReviewRequest) -> None:
+    print(f"[pipeline] starting job={payload.reviewJobId} paper={payload.paperId}", flush=True)
     try:
         _emit_progress(payload, "parsing", 18, "Parsing structure")
         parsed = parse_paper(
@@ -123,7 +124,11 @@ def _run_pipeline(payload: ReviewRequest) -> None:
 
         _emit_completion(payload, report)
     except Exception as error:
-        _emit_failure(payload, str(error))
+        print(f"[pipeline] FAILED at stage — {type(error).__name__}: {error}", flush=True)
+        try:
+            _emit_failure(payload, str(error))
+        except Exception as notify_error:
+            print(f"[pipeline] could not notify backend: {notify_error}", flush=True)
 
 
 @app.get("/health")

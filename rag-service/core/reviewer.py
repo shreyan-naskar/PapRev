@@ -80,10 +80,26 @@ def _gemini_review(prompt: str) -> dict | None:
         with urllib.request.urlopen(request, timeout=45) as response:
             data = json.loads(response.read().decode("utf-8"))
         parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-        content = "".join(part.get("text", "") for part in parts).strip()
-        return _extract_json_blob(content)
-    except Exception:
+        content = "".join(
+            part.get("text", "") for part in parts if not part.get("thought", False)
+        ).strip()
+        result = _extract_json_blob(content)
+        if result is None:
+            print(f"[reviewer] gemini returned unparseable content: {content[:200]}", flush=True)
+        return result
+    except Exception as exc:
+        print(f"[reviewer] gemini request failed: {exc}", flush=True)
         return None
+
+
+_CONFIDENCE_WORDS = {"high": 0.85, "medium": 0.65, "moderate": 0.65, "low": 0.4}
+
+
+def _parse_confidence(value) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return _CONFIDENCE_WORDS.get(str(value).lower().strip(), 0.7)
 
 
 def review_dimensions(parsed_paper: dict, context: dict) -> dict:
@@ -91,6 +107,8 @@ def review_dimensions(parsed_paper: dict, context: dict) -> dict:
     missing_sections = parsed_paper.get("missingSections", [])
     gemini_success_count = 0
     gemini_attempted = bool(os.getenv("GEMINI_API_KEY", ""))
+
+    print(f"[reviewer] gemini configured: {gemini_attempted}", flush=True)
 
     for dimension in DIMENSIONS:
         prompt = (
@@ -102,6 +120,7 @@ def review_dimensions(parsed_paper: dict, context: dict) -> dict:
         )
 
         gemini_result = _gemini_review(prompt)
+        print(f"[reviewer] dimension={dimension} gemini={'ok' if gemini_result else 'failed→heuristic'}", flush=True)
         if gemini_result:
             gemini_success_count += 1
             findings.append(
@@ -113,7 +132,7 @@ def review_dimensions(parsed_paper: dict, context: dict) -> dict:
                     "suggestion": gemini_result.get("suggestion", ""),
                     "affectedSection": dimension.title(),
                     "evidence": [],
-                    "confidence": float(gemini_result.get("confidence", 0.7)),
+                    "confidence": _parse_confidence(gemini_result.get("confidence", 0.7)),
                 }
             )
             continue
@@ -138,6 +157,11 @@ def review_dimensions(parsed_paper: dict, context: dict) -> dict:
             }
         )
 
+    print(
+        f"[reviewer] complete — llmProvider={'gemini' if gemini_success_count else 'heuristic'} "
+        f"geminiSuccessCount={gemini_success_count}/{len(DIMENSIONS)}",
+        flush=True,
+    )
     return {
         "findings": findings,
         "meta": {
